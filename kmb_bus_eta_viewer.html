@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="h-full bg-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>九巴實時到站時間 (KMB Real-Time Bus ETA)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            kmb: {
+              red: '#D32F2F',
+              darkred: '#9A0007',
+              gold: '#FFC107',
+              dark: '#1E293B'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    .pulse-dot {
+      animation: pulse-animation 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse-animation {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.95); }
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col text-slate-800 antialiased selection:bg-red-500 selection:text-white">
+
+  <!-- Header Header Banner -->
+  <header class="bg-kmb-red text-white shadow-md sticky top-0 z-50">
+    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="bg-white text-kmb-red rounded-xl p-2 font-black text-xl shadow-inner flex items-center justify-center w-10 h-10">
+          九巴
+        </div>
+        <div>
+          <h1 class="text-lg font-bold leading-tight">實時巴士到站時間</h1>
+          <p class="text-xs text-red-100 opacity-90">KMB Real-Time Bus ETA Viewer</p>
+        </div>
+      </div>
+      <!-- Quick Status Indicator -->
+      <div id="connection-status" class="flex items-center space-x-1.5 text-xs bg-red-800/50 backdrop-blur px-2.5 py-1 rounded-full border border-red-400/30">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+        <span class="font-medium text-red-50">系統運作正常</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main class="flex-1 max-w-4xl w-full mx-auto p-4 space-y-4">
+
+    <!-- Search & Control Card -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-5 transition-all">
+      <form id="search-form" onsubmit="event.preventDefault(); fetchETA();" class="space-y-4">
+        
+        <!-- Input Row -->
+        <div>
+          <label for="stop-id-input" class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+            <i class="fa-solid font-bold fa-bus-simple mr-1 text-kmb-red"></i> 巴士站代碼 (Stop ID)
+          </label>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <div class="relative flex-1">
+              <input 
+                type="text" 
+                id="stop-id-input" 
+                value="97BB9CE7A058E809" 
+                placeholder="請輸入九巴 Stop ID (例如: 97BB9CE7A058E809)" 
+                class="w-full pl-10 pr-10 py-2.5 text-base sm:text-sm font-mono font-semibold bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-kmb-red focus:border-kmb-red transition"
+                required
+              />
+              <i class="fa-solid fa-hashtag absolute left-3.5 top-3.5 text-slate-400 text-sm"></i>
+              <button 
+                type="button" 
+                onclick="clearStopInput()" 
+                class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 p-1" 
+                title="清除"
+              >
+                <i class="fa-solid fa-circle-xmark"></i>
+              </button>
+            </div>
+            
+            <button 
+              type="submit" 
+              class="bg-kmb-red hover:bg-kmb-darkred text-white font-semibold px-6 py-2.5 rounded-xl transition shadow-sm active:scale-95 flex items-center justify-center gap-2"
+            >
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <span>查詢 ETA</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Quick Presets -->
+        <div>
+          <div class="text-xs font-semibold text-slate-400 mb-2">常用巴士站 (Quick Presets):</div>
+          <div class="flex flex-wrap gap-1.5 text-xs">
+            <button type="button" onclick="setPreset('97BB9CE7A058E809', '預設巴士站')" class="px-2.5 py-1 bg-slate-100 hover:bg-red-50 hover:text-kmb-red rounded-lg font-medium text-slate-600 transition border border-slate-200">
+              📍 預設站位 (97BB...)
+            </button>
+            <button type="button" onclick="setPreset('8E6B1D0E4790E954', '紅磡海底隧道收費廣場')" class="px-2.5 py-1 bg-slate-100 hover:bg-red-50 hover:text-kmb-red rounded-lg font-medium text-slate-600 transition border border-slate-200">
+              🚌 紅隧轉車站
+            </button>
+            <button type="button" onclick="setPreset('252F17E6BDEEB6EA', '尖沙咀碼頭')" class="px-2.5 py-1 bg-slate-100 hover:bg-red-50 hover:text-kmb-red rounded-lg font-medium text-slate-600 transition border border-slate-200">
+              🎡 尖沙咀碼頭
+            </button>
+            <button type="button" onclick="setPreset('2E0D4C5ADAE630AC', '沙田市中心')" class="px-2.5 py-1 bg-slate-100 hover:bg-red-50 hover:text-kmb-red rounded-lg font-medium text-slate-600 transition border border-slate-200">
+              🏙️ 沙田市中心
+            </button>
+          </div>
+        </div>
+
+        <!-- Actions & Refresh Bar -->
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
+          
+          <!-- Auto Refresh Toggle -->
+          <div class="flex items-center space-x-2">
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="auto-refresh-toggle" class="sr-only peer" checked onchange="toggleAutoRefresh()">
+              <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-kmb-red"></div>
+            </label>
+            <span class="text-xs font-medium text-slate-600">自動更新 (<span id="countdown-text" class="font-mono text-kmb-red font-bold">30</span>s)</span>
+          </div>
+
+          <!-- Filter & Manual Refresh -->
+          <div class="flex items-center space-x-2 w-full sm:w-auto justify-end">
+            <input 
+              type="text" 
+              id="route-filter" 
+              placeholder="過濾路線 (例如: 1A)" 
+              oninput="renderData()"
+              class="px-2.5 py-1 text-xs border border-slate-200 rounded-lg w-28 focus:outline-none focus:ring-1 focus:ring-kmb-red"
+            />
+
+            <button 
+              type="button" 
+              onclick="fetchETA(true)" 
+              id="refresh-btn"
+              class="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition active:scale-95"
+            >
+              <i id="refresh-icon" class="fa-solid fa-rotate"></i>
+              <span>立即更新</span>
+            </button>
+          </div>
+
+        </div>
+
+      </form>
+    </div>
+
+    <!-- Stop Header Info -->
+    <div id="stop-info-bar" class="hidden bg-slate-800 text-white rounded-xl p-3 shadow-sm flex items-center justify-between">
+      <div class="flex items-center space-x-2 overflow-hidden">
+        <i class="fa-solid fa-location-dot text-kmb-gold text-lg shrink-0"></i>
+        <div class="truncate">
+          <div class="text-xs text-slate-400">當前巴士站 (Stop ID)</div>
+          <div id="stop-name-display" class="font-bold text-sm truncate font-mono">97BB9CE7A058E809</div>
+        </div>
+      </div>
+      <div class="text-right shrink-0 pl-2">
+        <div class="text-[10px] text-slate-400">最後更新時間</div>
+        <div id="last-update-time" class="text-xs font-mono text-slate-200">--:--:--</div>
+      </div>
+    </div>
+
+    <!-- Main Data List / Display Container -->
+    <div id="eta-container" class="space-y-3">
+      <!-- Loading Skeleton / Placeholder initially -->
+      <div class="bg-white rounded-2xl p-8 text-center text-slate-400 border border-slate-200">
+        <i class="fa-solid fa-bus text-4xl mb-3 text-slate-300 animate-bounce"></i>
+        <p class="text-sm">正在載入九巴實時數據...</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="mt-auto py-4 bg-white border-t border-slate-200 text-center text-xs text-slate-500">
+    <div class="max-w-4xl mx-auto px-4 space-y-1">
+      <p>數據來源：九巴資料開放平台 (KMB Open Data API)</p>
+      <p class="text-[10px] text-slate-400">本網頁為第三方輔助工具，時間僅供參考，實際班次請以九巴官方公佈為準。</p>
+    </div>
+  </footer>
+
+  <!-- Notification Toast Modal (Replaces browser alert) -->
+  <div id="toast" class="fixed bottom-5 right-5 max-w-xs bg-slate-900 text-white text-xs px-4 py-3 rounded-xl shadow-lg border border-slate-700 hidden transition-all duration-300 z-50 flex items-center space-x-2">
+    <i id="toast-icon" class="fa-solid fa-circle-info text-kmb-gold"></i>
+    <span id="toast-message">訊息提示</span>
+  </div>
+
+  <!-- JavaScript Logic -->
+  <script>
+    // Global State
+    let currentStopId = '97BB9CE7A058E809';
+    let rawETAData = [];
+    let countdownValue = 30;
+    let timerInterval = null;
+    let autoRefreshActive = true;
+
+    // DOM Elements
+    const stopIdInput = document.getElementById('stop-id-input');
+    const etaContainer = document.getElementById('eta-container');
+    const refreshIcon = document.getElementById('refresh-icon');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const countdownText = document.getElementById('countdown-text');
+    const lastUpdateTime = document.getElementById('last-update-time');
+    const stopNameDisplay = document.getElementById('stop-name-display');
+    const stopInfoBar = document.getElementById('stop-info-bar');
+    const routeFilter = document.getElementById('route-filter');
+
+    // On Page Load Initialization
+    window.addEventListener('DOMContentLoaded', () => {
+      fetchETA();
+      startTimer();
+    });
+
+    // Fetch ETA from KMB API
+    async function fetchETA(isManual = false) {
+      const stopId = stopIdInput.value.trim();
+      
+      if (!stopId) {
+        showToast('請輸入有效的 巴士站代碼 (Stop ID)', 'warning');
+        return;
+      }
+
+      currentStopId = stopId;
+      
+      // Visual feedback on refresh
+      refreshIcon.classList.add('animate-spin');
+      refreshBtn.disabled = true;
+
+      const apiUrl = `https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${stopId}`;
+
+      try {
+        const response = await fetch(apiUrl);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP Error! Status: ${response.status}`);
+        }
+
+        const json = await response.json();
+
+        if (json && Array.isArray(json.data)) {
+          rawETAData = json.data;
+          renderData();
+          updateHeaderInfo();
+          if (isManual) showToast('資料已更新', 'success');
+        } else {
+          throw new Error('API 返回無效數據格式');
+        }
+
+      } catch (error) {
+        console.error('Fetch Error:', error);
+        renderErrorState(error.message);
+        showToast('讀取數據失敗，請檢查 Stop ID 或網絡', 'error');
+      } finally {
+        refreshIcon.classList.remove('animate-spin');
+        refreshBtn.disabled = false;
+        resetCountdown();
+      }
+    }
+
+    // Process and Render ETA Cards
+    function renderData() {
+      const filterTerm = routeFilter.value.trim().toUpperCase();
+      
+      // Filter out empty/null route data if any
+      let filteredData = rawETAData.filter(item => item && item.route);
+
+      // Apply Route Filter if specified
+      if (filterTerm) {
+        filteredData = filteredData.filter(item => item.route.toUpperCase().includes(filterTerm));
+      }
+
+      if (filteredData.length === 0) {
+        etaContainer.innerHTML = `
+          <div class="bg-white rounded-2xl p-8 text-center text-slate-500 border border-slate-200">
+            <i class="fa-solid fa-triangle-exclamation text-3xl text-amber-500 mb-2">
+            </i>
+            <p class="font-semibold text-base mb-1">找不到相關巴士班次數據</p>
+            <p class="text-xs text-slate-400">請確認 Stop ID 是否正確，或目前該站沒有預訂班次。</p>
+          </div>
+        `;
+        return;
+      }
+
+      // Grouping data by Route and Destination to group multiple upcoming buses neatly
+      const groupedRoutes = {};
+
+      const now = new Date(); // Current local/UTC matching date object
+
+      filteredData.forEach(item => {
+        // Unique key for route + destination
+        const routeKey = `${item.route}_${item.dir}_${item.dest_tc}`;
+        
+        if (!groupedRoutes[routeKey]) {
+          groupedRoutes[routeKey] = {
+            route: item.route,
+            dir: item.dir,
+            dest_tc: item.dest_tc || '未知目的地',
+            dest_en: item.dest_en || '',
+            service_provider: item.service_provider || 'KMB',
+            etas: []
+          };
+        }
+
+        // Calculate remaining minutes matching the python logic:
+        // eta_dt = datetime.fromisoformat(eta)
+        // diff = round((eta_dt - now).total_seconds() / 60)
+        let diffMinutes = null;
+        let isArrived = false;
+        let formattedTimeStr = '--:--';
+
+        if (item.eta) {
+          const etaDt = new Date(item.eta);
+          const diffMs = etaDt - now;
+          diffMinutes = Math.round(diffMs / (1000 * 60));
+
+          // Hours/Minutes formatting for display
+          const hours = String(etaDt.getHours()).padStart(2, '0');
+          const minutes = String(etaDt.getMinutes()).padStart(2, '0');
+          formattedTimeStr = `${hours}:${minutes}`;
+
+          if (diffMinutes <= 0) {
+            isArrived = true;
+          }
+        }
+
+        groupedRoutes[routeKey].etas.push({
+          rawEta: item.eta,
+          timeStr: formattedTimeStr,
+          diffMinutes: diffMinutes,
+          isArrived: isArrived,
+          rmk_tc: item.rmk_tc || '',
+          rmk_en: item.rmk_en || '',
+          seq: item.eta_seq || 1
+        });
+      });
+
+      // Render Cards HTML
+      let html = '';
+
+      Object.values(groupedRoutes).forEach(group => {
+        // Sort ETAs by sequence / time
+        group.etas.sort((a, b) => (a.seq || 0) - (b.seq || 0));
+
+        html += `
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition">
+            <!-- Card Header: Route & Destination -->
+            <div class="p-4 sm:p-5 flex items-center justify-between border-b border-slate-100 bg-slate-50/50">
+              <div class="flex items-center space-x-3">
+                <!-- Route Badge -->
+                <div class="bg-kmb-red text-white font-extrabold text-2xl sm:text-3xl px-3 py-1.5 rounded-xl tracking-tight shadow-sm min-w-[70px] text-center">
+                  ${escapeHtml(group.route)}
+                </div>
+                <div>
+                  <div class="text-xs text-slate-400 font-semibold uppercase tracking-wider flex items-center gap-1">
+                    <span>往 To</span>
+                    <span class="bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-bold">${group.service_provider}</span>
+                  </div>
+                  <div class="text-lg sm:text-xl font-bold text-slate-800 leading-tight">
+                    ${escapeHtml(group.dest_tc)}
+                  </div>
+                  ${group.dest_en ? `<div class="text-xs text-slate-400 font-medium">${escapeHtml(group.dest_en)}</div>` : ''}
+                </div>
+              </div>
+            </div>
+
+            <!-- Card Body: ETA Slots -->
+            <div class="divide-y divide-slate-100">
+        `;
+
+        group.etas.forEach((etaItem, idx) => {
+          let badgeHtml = '';
+          
+          if (etaItem.rawEta === null) {
+            badgeHtml = `
+              <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-xs font-semibold">
+                九巴暫未能提供時間
+              </span>
+            `;
+          } else if (etaItem.isArrived) {
+            badgeHtml = `
+              <div class="flex items-center space-x-2">
+                <span class="px-3 py-1.5 bg-emerald-100 text-emerald-800 rounded-xl text-sm font-bold animate-pulse flex items-center gap-1">
+                  <i class="fa-solid fa-bus-arrival"></i> 已到達 / 即將到達
+                </span>
+                <span class="text-xs text-slate-400 font-mono">(${etaItem.timeStr})</span>
+              </div>
+            `;
+          } else {
+            // Minutes countdown
+            const isFirst = idx === 0;
+            const bgClass = isFirst ? 'bg-red-50 border-red-200 text-kmb-red' : 'bg-slate-50 border-slate-200 text-slate-700';
+
+            badgeHtml = `
+              <div class="flex items-center justify-between w-full">
+                <div class="flex items-center space-x-2">
+                  <span class="text-2xl sm:text-3xl font-extrabold font-mono ${isFirst ? 'text-kmb-red' : 'text-slate-800'}">
+                    ${etaItem.diffMinutes}
+                  </span>
+                  <span class="text-xs sm:text-sm font-bold ${isFirst ? 'text-kmb-red' : 'text-slate-500'}">分鐘</span>
+                </div>
+                <div class="text-right">
+                  <div class="text-xs sm:text-sm font-mono font-semibold text-slate-600">
+                    預計 ${etaItem.timeStr}
+                  </div>
+                </div>
+              </div>
+            `;
+          }
+
+          html += `
+            <div class="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/80 transition">
+              <div class="flex items-center space-x-2">
+                <span class="w-5 h-5 rounded-full ${idx === 0 ? 'bg-kmb-red text-white' : 'bg-slate-200 text-slate-600'} text-[11px] font-bold flex items-center justify-center shrink-0">
+                  ${idx + 1}
+                </span>
+                ${etaItem.rmk_tc ? `<span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200 font-medium">${escapeHtml(etaItem.rmk_tc)}</span>` : ''}
+              </div>
+              <div class="flex-1 sm:max-w-xs">
+                ${badgeHtml}
+              </div>
+            </div>
+          `;
+        });
+
+        html += `
+            </div>
+          </div>
+        `;
+      });
+
+      etaContainer.innerHTML = html;
+    }
+
+    // Render Error Display
+    function renderErrorState(message) {
+      etaContainer.innerHTML = `
+        <div class="bg-red-50 border border-red-200 rounded-2xl p-6 text-center text-red-700 space-y-2">
+          <i class="fa-solid fa-triangle-exclamation text-3xl text-red-500"></i>
+          <h3 class="font-bold text-base">無法讀取巴士資料</h3>
+          <p class="text-xs text-red-600">${escapeHtml(message)}</p>
+          <button onclick="fetchETA(true)" class="mt-3 px-4 py-1.5 bg-red-600 text-white rounded-xl text-xs font-semibold hover:bg-red-700 transition">
+            重試 (Retry)
+          </button>
+        </div>
+      `;
+    }
+
+    // Header Info Update
+    function updateHeaderInfo() {
+      const now = new Date();
+      lastUpdateTime.textContent = now.toLocaleTimeString();
+      stopNameDisplay.textContent = currentStopId;
+      stopInfoBar.classList.remove('hidden');
+    }
+
+    // Quick Preset Handler
+    function setPreset(stopId, label) {
+      stopIdInput.value = stopId;
+      fetchETA(true);
+      showToast(`已載入: ${label}`, 'info');
+    }
+
+    // Clear Input Helper
+    function clearStopInput() {
+      stopIdInput.value = '';
+      stopIdInput.focus();
+    }
+
+    // Countdown & Timer Logic
+    function startTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if (!autoRefreshActive) return;
+
+        countdownValue--;
+        if (countdownValue < 0) {
+          countdownValue = 30;
+          fetchETA();
+        }
+        countdownText.textContent = countdownValue;
+      }, 1000);
+    }
+
+    function resetCountdown() {
+      countdownValue = 30;
+      countdownText.textContent = countdownValue;
+    }
+
+    function toggleAutoRefresh() {
+      const checkbox = document.getElementById('auto-refresh-toggle');
+      autoRefreshActive = checkbox.checked;
+      if (autoRefreshActive) {
+        resetCountdown();
+        showToast('已開啟自動更新', 'info');
+      } else {
+        countdownText.textContent = '已暫停';
+        showToast('已暫停自動更新', 'info');
+      }
+    }
+
+    // Toast Notification Helper
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-message');
+      const toastIcon = document.getElementById('toast-icon');
+
+      toastMsg.textContent = message;
+
+      if (type === 'error') {
+        toastIcon.className = 'fa-solid fa-circle-xmark text-red-400';
+      } else if (type === 'success') {
+        toastIcon.className = 'fa-solid fa-circle-check text-emerald-400';
+      } else if (type === 'warning') {
+        toastIcon.className = 'fa-solid fa-triangle-exclamation text-amber-400';
+      } else {
+        toastIcon.className = 'fa-solid fa-circle-info text-kmb-gold';
+      }
+
+      toast.classList.remove('hidden');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 3000);
+    }
+
+    // Utility: XSS Sanitation
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>
